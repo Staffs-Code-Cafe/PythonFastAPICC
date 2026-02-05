@@ -176,8 +176,8 @@ curl -X POST http://{IP Address}/challenge/submit \
 {
   "status": "WIN",
   "message": "Congratulations! You solved the API challenge!",
-  "prize": "Access granted to the secret endpoint",
-  "next": "/challenge/prize"
+  "prize": "Access granted to the second endpoint",
+  "next": "{The next endpoint}"
 }
 ```
 
@@ -190,21 +190,85 @@ curl -X POST http://{IP Address}/challenge/submit \
 
 ---
 
+### GET /challenge/key/start
+**Purpose:** Begin key retrieval step.
+
+**Description:** Returns a nonce and instructions to compute a SHA256 hash. The string to hash uses the numeric values you discovered:
+
+```
+"<alpha>-<beta>-<gamma>-<nonce>"
+```
+
+For the current challenge numbers, that means:
+```
+"7-13-21-<nonce>"
+```
+
+**Example Request:**
+```bash
+curl http://{IP Address}/{Secret second endpoint}
+```
+
+**Example Response:**
+```json
+{
+  "step": "hash",
+  "nonce": "<NONCE>",
+  "instructions": "Compute SHA256 of 'alpha-beta-gamma-<nonce>' and POST to {Super secret endpoint}"
+}
+```
+
+---
+
+### POST /challenge/key/hash
+**Purpose:** Submit the computed hash to receive a key.
+
+**Description:** Compute SHA256 of the string "7-13-21-<nonce>" and submit both the nonce and the hex-encoded hash. If correct, you get a key bound to your IP.
+
+
+**Use the helper script**
+
+You can use the included helper tool to produce the hash and ready-to-send JSON:
+
+```bash
+python challenge_hash.py --alpha {Super secret number 1} --beta {Super secret number 2} --gamma {Super secret number 1} --nonce {Super secret nonce}
+```
+
+Copy the printed JSON into the POST request to /challenge/key/hash.
+
+**Example Request:**
+```bash
+curl -X POST http://{IP Address}/challenge/key/hash \
+  -H "Content-Type: application/json" \
+  -d '{"nonce":"<NONCE>","hash":"<SHA256_HEX>"}'
+```
+
+**Success Response:**
+```json
+{
+  "status": "OK",
+  "next": "/challenge/prize",
+  "key_hint": "Use query param ?key=...",
+  "key": "<KEY>"
+}
+```
+
+---
+
 ### GET /challenge/prize
 **Purpose:** Reward endpoint.
 
-**Description:** Accessible after successful challenge completion.
+**Description:** Requires the key provided after the hash step. The key is tied to your IP.
 
 ```bash
-curl http://{IP Address}/challenge/prize
+curl "http://{IP Address}/challenge/prize?key=<KEY>"
 ```
 
 **Response Example:**
 ```json
 {
-  "prize": "API Master Badge",
-  "message": "You have completed the scavenger hunt challenge!",
-  "reward": "Certificate, leaderboard entry, or classroom prize"
+  "Congrats": "You win!"
+  "prize": "£10 giftcard of your choice",
 }
 ```
 

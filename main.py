@@ -2,6 +2,8 @@ from fastapi.responses import HTMLResponse
 import markdown
 from dotenv import load_dotenv
 import os
+import secrets
+import hashlib
 from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
@@ -211,6 +213,8 @@ def lesson_markdown_web(request: Request):
 # CHALLENGE MODE (RATE LIMITED)
 # ================================
 SECRET_NUMBERS = {"alpha": 7, "beta": 13, "gamma": 21}
+NONCES = {}
+KEYS = {}
 
 @app.get("/challenge", tags=["Challenge"])
 @limiter.limit("15/minute")
@@ -244,6 +248,10 @@ def challenge_gamma(request: Request):
 class ChallengeSubmission(BaseModel):
     result: int
 
+class HashSubmission(BaseModel):
+    nonce: str
+    hash: str
+
 @app.post("/challenge/submit", tags=["Challenge"])
 @limiter.limit("5/minute")
 def challenge_submit(request: Request, data: ChallengeSubmission):
@@ -252,20 +260,53 @@ def challenge_submit(request: Request, data: ChallengeSubmission):
     if data.result == correct_value:
         return {
             "status": "WIN",
-            "message": "🎉 Congratulations! You solved the API challenge!",
-            "prize": "Access granted to the secret endpoint",
-            "next": "/challenge/prize"
+            "message": "🎉 Congratulations! You solved the first API challenge!",
+            "prize": "Access granted to the second endpoint",
+            "next": "/challenge/key/start"
         }
     else:
         raise HTTPException(status_code=400, detail="Incorrect result. Try again.")
 
+@app.get("/challenge/key/start", tags=["Challenge"])
+@limiter.limit("5/minute")
+def challenge_key_start(request: Request):
+    ip = get_remote_address(request)
+    nonce = secrets.token_hex(16)
+    NONCES[ip] = nonce
+    return {
+        "step": "hash",
+        "nonce": nonce,
+        "instructions": "Compute SHA256 of 'alpha-beta-gamma-<nonce>' and POST to /challenge/key/hash"
+    }
+
+@app.post("/challenge/key/hash", tags=["Challenge"])
+@limiter.limit("5/minute")
+def challenge_key_hash(request: Request, data: HashSubmission):
+    ip = get_remote_address(request)
+    if NONCES.get(ip) != data.nonce:
+        raise HTTPException(status_code=400, detail="Invalid or expired nonce")
+    s = f"{SECRET_NUMBERS['alpha']}-{SECRET_NUMBERS['beta']}-{SECRET_NUMBERS['gamma']}-{data.nonce}"
+    expected = hashlib.sha256(s.encode()).hexdigest()
+    if data.hash != expected:
+        raise HTTPException(status_code=400, detail="Incorrect hash")
+    key = secrets.token_urlsafe(16)
+    KEYS[ip] = key
+    return {
+        "status": "OK",
+        "next": "/challenge/prize",
+        "key_hint": "Use query param ?key=...",
+        "key": key
+    }
 
 @app.get("/challenge/prize", tags=["Challenge"])
 @limiter.limit("5/minute")
-def challenge_prize(request: Request):
+def challenge_prize(request: Request, key: str | None = None):
+    ip = get_remote_address(request)
+    if not key or KEYS.get(ip) != key:
+        raise HTTPException(status_code=403, detail="Valid key required")
     return {
-        "prize": "Shout sick it for a prize!",
-        "reward": "Certificate and "
+        "prize": "API Master Badge",
+        "reward": "Certificate"
     }
 
 # ================================
